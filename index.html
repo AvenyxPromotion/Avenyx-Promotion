@@ -43,11 +43,10 @@ body{
   border-radius:18px;
   padding:22px;
   margin-bottom:16px;
+  animation:fadeUp .25s ease;
 }
 
-h2{
-  margin-bottom:18px;
-}
+h2{margin-bottom:18px}
 
 input{
   width:100%;
@@ -59,10 +58,12 @@ input{
   color:#fff;
   font-size:15px;
   outline:none;
+  transition:border-color .2s,box-shadow .2s;
 }
 
 input:focus{
   border-color:#705cff;
+  box-shadow:0 0 0 3px rgba(112,92,255,.12);
 }
 
 button{
@@ -75,6 +76,11 @@ button{
   font-size:16px;
   font-weight:bold;
   cursor:pointer;
+  transition:transform .15s,opacity .15s;
+}
+
+button:active{
+  transform:scale(.98);
 }
 
 button.secondary{
@@ -84,6 +90,7 @@ button.secondary{
 button:disabled{
   opacity:.6;
   cursor:not-allowed;
+  transform:none;
 }
 
 .link{
@@ -145,6 +152,17 @@ button:disabled{
 .menu{
   display:grid;
   gap:10px;
+}
+
+@keyframes fadeUp{
+  from{
+    opacity:0;
+    transform:translateY(8px);
+  }
+  to{
+    opacity:1;
+    transform:translateY(0);
+  }
 }
 </style>
 </head>
@@ -369,6 +387,9 @@ const SUPABASE_URL =
 const SUPABASE_KEY =
 "sb_publishable_jGntlFvnrtUHmO22pVB1SQ_d_RP8K53";
 
+const REDIRECT_URL =
+"https://avenyxpromotion.github.io/Avenyx-Promotion/";
+
 const supabaseClient =
 window.supabase.createClient(
   SUPABASE_URL,
@@ -376,6 +397,7 @@ window.supabase.createClient(
 );
 
 let lastRegisteredEmail = "";
+let dashboardLoading = false;
 
 
 function showLogin(){
@@ -441,6 +463,8 @@ function showMessage(id,text,type=""){
 const el =
 document.getElementById(id);
 
+if(!el) return;
+
 el.textContent = text;
 
 el.className =
@@ -481,6 +505,48 @@ button.textContent =
 loading
 ? "Memproses..."
 : normalText;
+
+}
+
+
+function friendlyError(error){
+
+const message =
+error?.message ||
+"Terjadi kesalahan.";
+
+const lower =
+message.toLowerCase();
+
+
+if(
+lower.includes("already registered")
+){
+
+return "Email tersebut sudah terdaftar. Silakan login.";
+
+}
+
+
+if(
+lower.includes("invalid login credentials")
+){
+
+return "Email atau password salah.";
+
+}
+
+
+if(
+lower.includes("email not confirmed")
+){
+
+return "Email kamu belum diverifikasi.";
+
+}
+
+
+return message;
 
 }
 
@@ -582,17 +648,22 @@ email:email,
 password:password,
 
 options:{
+emailRedirectTo:REDIRECT_URL,
+
 data:{
 full_name:name,
 username:username
 }
+
 }
 
 });
 
 
 if(error){
+
 throw error;
+
 }
 
 
@@ -611,12 +682,12 @@ email;
 
 if(data.session){
 
-await saveProfile(data.user);
+await saveProfile(
+data.user
+);
 
-showMessage(
-"registerMessage",
-"Akun berhasil dibuat. Kamu bisa login sekarang.",
-"success"
+await loadDashboard(
+data.user
 );
 
 }else{
@@ -639,27 +710,9 @@ console.error(
 error
 );
 
-
-let message =
-error.message ||
-"Pendaftaran gagal.";
-
-
-if(
-message
-.toLowerCase()
-.includes("already registered")
-){
-
-message =
-"Email tersebut sudah terdaftar. Silakan login.";
-
-}
-
-
 showMessage(
 "registerMessage",
-message,
+friendlyError(error),
 "error"
 );
 
@@ -680,7 +733,9 @@ false,
 async function saveProfile(user){
 
 if(!user){
+
 return false;
+
 }
 
 
@@ -696,8 +751,13 @@ const fullName =
 metadata.full_name || "";
 
 
-if(!username && !fullName){
+if(
+!username &&
+!fullName
+){
+
 return true;
+
 }
 
 
@@ -750,7 +810,10 @@ document
 .value;
 
 
-if(!email || !password){
+if(
+!email ||
+!password
+){
 
 showMessage(
 "loginMessage",
@@ -791,14 +854,10 @@ password:password
 
 if(error){
 
-const errorText =
-error.message.toLowerCase();
-
-
 if(
-errorText.includes(
-"email not confirmed"
-)
+error.message
+.toLowerCase()
+.includes("email not confirmed")
 ){
 
 lastRegisteredEmail =
@@ -850,7 +909,8 @@ error
 
 showMessage(
 "loginMessage",
-"Login gagal: email atau password salah.",
+"Login gagal: " +
+friendlyError(error),
 "error"
 );
 
@@ -908,7 +968,9 @@ email:lastRegisteredEmail
 
 
 if(error){
+
 throw error;
+
 }
 
 
@@ -929,7 +991,7 @@ error
 showMessage(
 "verifyMessage",
 "Gagal mengirim ulang: " +
-error.message,
+friendlyError(error),
 "error"
 );
 
@@ -948,8 +1010,17 @@ button.textContent =
 
 async function loadDashboard(user){
 
-let displayName =
-"Pengguna";
+if(
+!user ||
+dashboardLoading
+){
+
+return;
+
+}
+
+
+dashboardLoading = true;
 
 
 try{
@@ -970,7 +1041,14 @@ await supabaseClient
 "id",
 user.id
 )
-.single();
+.maybeSingle();
+
+
+let displayName =
+user.user_metadata?.full_name ||
+user.user_metadata?.username ||
+user.email ||
+"Pengguna";
 
 
 if(
@@ -981,24 +1059,7 @@ profile
 displayName =
 profile.full_name ||
 profile.username ||
-"Pengguna";
-
-}
-
-
-}catch(error){
-
-console.log(
-"PROFILE LOAD:",
-error
-);
-
-
-displayName =
-user.user_metadata?.full_name ||
-user.user_metadata?.username ||
-user.email ||
-"Pengguna";
+displayName;
 
 }
 
@@ -1017,6 +1078,21 @@ document
 document
 .getElementById("dashboardPage")
 .classList.remove("hidden");
+
+
+}catch(error){
+
+console.error(
+"DASHBOARD ERROR:",
+error
+);
+
+
+}finally{
+
+dashboardLoading = false;
+
+}
 
 }
 
@@ -1064,6 +1140,7 @@ showLogin();
 
 }
 
+
 }catch(error){
 
 console.error(
@@ -1080,16 +1157,21 @@ showLogin();
 
 supabaseClient.auth
 .onAuthStateChange(
-async (event,session)=>{
+(event,session)=>{
 
 if(
-event === "SIGNED_IN" &&
-session
+event === "SIGNED_OUT"
 ){
 
-await loadDashboard(
-session.user
-);
+document
+.getElementById("dashboardPage")
+.classList.add("hidden");
+
+document
+.getElementById("authPage")
+.classList.remove("hidden");
+
+showLogin();
 
 }
 
